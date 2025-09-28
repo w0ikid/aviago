@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
+
+	"github.com/gin-gonic/gin"
 )
 
 type WhoamiResponse struct {
@@ -17,23 +20,25 @@ type WhoamiResponse struct {
 	} `json:"identity"`
 }
 
-// middleware, который проверяет, есть ли валидная сессия у пользователя
-func authMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// достаем cookie из запроса
-		cookie, err := r.Cookie("ory_kratos_session") // имя сессии Kratos по дефолту
-		if err != nil {
-			http.Error(w, "Unauthorized (no session cookie)", http.StatusUnauthorized)
+func authMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Достаем токен из заголовка Authorization
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized (no bearer token)"})
+			c.Abort()
 			return
 		}
+		token := strings.TrimPrefix(authHeader, "Bearer ")
 
-		// пробрасываем cookie в запрос к Kratos
+		// Отправляем запрос в Kratos /sessions/whoami
 		req, _ := http.NewRequest("GET", "http://127.0.0.1:4433/sessions/whoami", nil)
-		req.AddCookie(cookie)
+		req.Header.Set("Authorization", "Bearer "+token)
 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil || resp.StatusCode != 200 {
-			http.Error(w, "Unauthorized (invalid session)", http.StatusUnauthorized)
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized (invalid session)"})
+			c.Abort()
 			return
 		}
 		defer resp.Body.Close()
@@ -41,28 +46,46 @@ func authMiddleware(next http.Handler) http.Handler {
 		body, _ := io.ReadAll(resp.Body)
 		var whoami WhoamiResponse
 		if err := json.Unmarshal(body, &whoami); err != nil {
-			http.Error(w, "Unauthorized (bad whoami response)", http.StatusUnauthorized)
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized (bad whoami response)"})
+			c.Abort()
 			return
 		}
 
-		// ✅ если дошли сюда, значит пользователь авторизован
+		// ✅ Авторизованный пользователь
 		fmt.Printf("Authorized user: %s (%s)\n", whoami.Identity.Traits.Name, whoami.Identity.Traits.Email)
 
-		// передаем дальше в хендлер
-		next.ServeHTTP(w, r)
-	})
-}
+		c.Set("user_id", whoami.Identity.ID)
+		c.Set("user_email", whoami.Identity.Traits.Email)
+		c.Set("user_name", whoami.Identity.Traits.Name)
 
-func welcomeHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintln(w, "<h1>Welcome!</h1><p>You are on /welcome page 🚀</p>")
+		c.Next()
+	}
 }
 
 func main() {
-	mux := http.NewServeMux()
-	mux.Handle("/welcome", authMiddleware(http.HandlerFunc(welcomeHandler)))
+	r := gin.Default()
 
-	fmt.Println("Server is running on http://127.0.0.1:4455/welcome")
-	if err := http.ListenAndServe(":4455", mux); err != nil {
+	// public
+	r.GET("/public", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "This is a public endpoint 🌍",
+		})
+	})
+
+	// private
+	r.GET("/welcome", authMiddleware(), func(c *gin.Context) {
+		userName := c.GetString("user_name")
+		userEmail := c.GetString("user_email")
+
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Welcome 🚀",
+			"name":    userName,
+			"email":   userEmail,
+		})
+	})
+
+	fmt.Println("Server is running on http://127.0.0.1:4455")
+	if err := r.Run(":4455"); err != nil {
 		panic(err)
 	}
 }
