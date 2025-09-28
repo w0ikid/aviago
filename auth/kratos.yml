@@ -1,0 +1,38 @@
+version: v0.11.0
+
+dsn: postgres://kratos:secret@postgres:5432/kratos?sslmode=disable
+
+serve:
+  public:
+    base_url: http://localhost:4433/
+    cors:
+      enabled: true
+      allowed_origins:
+        - http://127.0.0.1:3000
+        - http://localhost:3000
+
+  admin:
+    base_url: http://localhost:4434/
+
+identity:
+  default_schema_id: user
+  schemas:
+    - id: user
+      url: file:///etc/config/identity.schema.json
+
+selfservice:
+  default_browser_return_url: http://127.0.0.1:3000/ # твой фронт
+  flows:
+    registration:
+      after:
+        default_browser_return_url: http://127.0.0.1:3000/
+    login:
+      after:
+        default_browser_return_url: http://127.0.0.1:3000/
+
+log:
+  level: debug
+
+courier:
+  smtp:
+    connection_uri: "smtp://stub:stub@localhost:1025/?skip_ssl_verify=true"

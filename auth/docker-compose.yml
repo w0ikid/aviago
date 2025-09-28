@@ -1,0 +1,41 @@
+version: "3.7"
+
+services:
+  kratos-migrate:
+    image: oryd/kratos:v0.11.0
+    command: migrate sql -e --yes
+    environment:
+      - DSN=postgres://kratos:secret@postgres:5432/kratos?sslmode=disable
+    volumes:
+      - ./kratos.yml:/etc/config/kratos.yml:z
+      - ./identity.schema.json:/etc/config/identity.schema.json:z
+    depends_on:
+      - postgres
+
+  kratos:
+    image: oryd/kratos:v0.11.0
+    command: serve --dev --config /etc/config/kratos.yml
+    environment:
+      - DSN=postgres://kratos:secret@postgres:5432/kratos?sslmode=disable
+    ports:
+      - "4433:4433" # public API
+      - "4434:4434" # admin API
+    volumes:
+      - ./kratos.yml:/etc/config/kratos.yml:z
+      - ./identity.schema.json:/etc/config/identity.schema.json:z
+    depends_on:
+      - kratos-migrate
+      - postgres
+
+  postgres:
+    image: postgres:14
+    environment:
+      POSTGRES_USER: kratos
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: kratos
+    ports:
+      - "5433:5432"
+  mailhog:
+    image: mailhog/mailhog
+    ports:
+      - "8025:8025" # веб-интерфейс писем

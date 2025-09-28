@@ -1,0 +1,9 @@
+services:
+  kratos:
+    image: oryd/kratos:latest
+    command: serve --dev --config /etc/config/kratos/kratos.yml
+    volumes:
+      - ./auth/config:/etc/config/kratos
+    ports:
+      - "4433:4433" # public
+      - "4434:4434" # admin
